@@ -103,6 +103,11 @@ Hold the Go button to acknowledge the incomplete transfer and return to â€œidleâ
 ### schematic for Pi-HAT
 ![swallow schematic](img/swallow-schematic.png)
 
+
+### PCB Layout
+![PCB Layout](img/PCB_Layout.jpeg)
+
+
 ### SSH into pi with Ethernet cable
 If you connect an ethernet cable directly to a Raspberry Pi, you can SSH in (provided SSH is enabled, `ssh` file exists in `~`) with:
 
