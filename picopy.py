@@ -14,16 +14,16 @@ from pathlib import Path
 import queue
 
 # GPIO pin setup for LEDs and Buttons
-status_led = LED(18)
+status_led = LED(17)
 progress_led = LED(27)
 error_led = LED(22)
-src_mounted_led = LED(23)
-dest_mounted_led = LED(24)
+src_mounted_led = LED(24)
+dest_mounted_led = LED(23)
 
-go_button = Button(4, hold_time=1)
-cancel_button = Button(17, hold_time=1)
-eject_button = Button(5, hold_time=1)
-# power button is GPIO3, but managed by a separate script
+go_button = Button(2, hold_time=1, hold_repeat=False)
+cancel_button = Button(3, hold_time=1, hold_repeat=False)
+eject_button = Button(4, hold_time=1, hold_repeat=False)
+# power button is GPIO18, but managed by a separate script
 
 # script parameters
 mount_check_interval = 1  # every x seconds, check if a source and destination are mounted
