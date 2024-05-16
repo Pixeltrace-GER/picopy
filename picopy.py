@@ -158,8 +158,8 @@ def blink_progress_led(outof10):
     """blink the progress led up to 10 times to indicate progress out of 10"""
     if outof10 > 10 or outof10 < 0:
         raise ValueError(f"outof10 must be int in 0-10. got {outof10}")
-    progress_led.blink(0.1, 0.15, outof10)
-    sleep(3 - 0.25 * outof10)
+    progress_led.blink(0.2, 0.25, outof10)
+    sleep(5 - 0.45 * outof10)
 
 
 def get_src_drive():  # TODO: blink the drive LED rather than error
