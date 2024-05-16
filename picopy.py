@@ -12,6 +12,7 @@ import subprocess
 import threading
 from pathlib import Path
 import queue
+import logging
 
 # GPIO pin setup for LEDs and Buttons
 status_led = LED(17)
@@ -24,6 +25,20 @@ go_button = Button(2, hold_time=1)
 cancel_button = Button(4, hold_time=1)
 eject_button = Button(18, hold_time=1)
 # power button is GPIO3, but managed by a separate script
+
+#Logging parameters
+logger = logging.getLogger('picopy')
+logger.setLevel(logging.DEBUG)
+
+# create stdout logger and add it as sink
+stdout_logger = logging.StreamHandler()
+stdout_logger.setLevel(logging.DEBUG)
+logger.addHandler(stdout_logger)
+
+# create file logger and add it as sink
+file_logger = logging.FileHandler(filename='picopy.log')
+file_logger.setLevel(logging.INFO)
+logger.addHandler(file_logger)
 
 # script parameters
 mount_check_interval = 1  # every x seconds, check if a source and destination are mounted
@@ -40,8 +55,19 @@ rsync_thread = None
 dest_save_dir = None
 
 
-def log(s):
-    print(f"{datetime.datetime.now()} [{status}]:\t{s}")
+def log(s,mode = "info"):
+    loginfo = f"{datetime.datetime.now()} [{status}]:\t{s}"
+    if mode == 'debug':
+        logger.debug(loginfo)
+    elif mode == 'info':
+        logger.info(loginfo)
+    elif mode == 'warning':
+        logger.warning(loginfo)
+    elif mode == 'error':
+        logger.error(loginfo)
+    elif mode == 'fatal':
+        logger.fatal(loginfo)
+
 
 
 def output_parser(process):
@@ -145,10 +171,11 @@ def get_src_drive():  # TODO: blink the drive LED rather than error
     drives = glob(f"{mount_location}/*")
     src_drives = []
     for d in drives:
+        #checking for missing {d}/PICOPY_DESTINATION
         if not os.path.exists(f"{d}/PICOPY_DESTINATION"):
             src_drives.append(d)
     if len(src_drives) > 1:
-        log("ERR: found multiple source drives")
+        log("ERR: found multiple source drives", "error")
         blink_error_src(3, 2)
         return None
     elif len(src_drives) < 1:
@@ -162,11 +189,11 @@ def get_dest_drive():
     drives = glob(f"{mount_location}/*")
     dest_drives = []
     for d in drives:
-        log(f'checking for {d}/PICOPY_DESTINATION')
+        #checking for {d}/PICOPY_DESTINATION
         if os.path.exists(f"{d}/PICOPY_DESTINATION"):
             dest_drives.append(d)
     if len(dest_drives) > 1:
-        log("ERR: found multiple destination drives")
+        log("ERR: found multiple destination drives", "error")
         blink_error_dest(4, 2)
         return None
     elif len(dest_drives) < 1:
@@ -176,57 +203,57 @@ def get_dest_drive():
 
 def eject_drive(source=True):
     """eject the source drive (source=True) or dest drive (source=False)"""
-    log("attempting to eject")
+    log("INF: attempting to eject")
 
     drive = get_src_drive() if source else get_dest_drive()
     log(drive)
 
     if drive is None:
-        log("ERR: no drive to eject")
+        log("ERR: no drive to eject", "error")
     else:
         # try to eject the disk with system eject command
         cmd = f"eject {drive}"
-        log(cmd)
+        log(cmd,"debug")
         response = subprocess.Popen(
             shlex.split(cmd), stdout=subprocess.PIPE, stderr=subprocess.STDOUT
         )
         # response.communicate()
-        [log(r) for r in output_parser(response)]
+        [log(r,"debug") for r in output_parser(response)]
 
     sleep(1)
 
 
 def prepare_copy():
-    log("checking for source and dest drives")
+    log("INF: checking for source and dest drives")
 
     source = get_src_drive()
     if source is None:
         blink_error(3, 3)
-        log("ERR: no source found")
+        log("ERR: no source found", "error")
         return "idle", None, None
 
     dest = get_dest_drive()
     if dest is None:
         blink_error(4, 3)
-        log("ERR: no destination found. Dest should contain file or folder PICOPY_DESTINATION in root")
+        log("ERR: no destination found. Dest should contain file or folder PICOPY_DESTINATION in root", "error")
         return "idle", None, None
 
-    log(f"found source drive {source} and destination drive {dest}")
+    log(f"INF: found source drive {source} and destination drive {dest}")
 
     # ok, now we know we have 1 source and 1 destination
     # check that enough space on the dest for source
-    log("checking free space")
+    log("INF: checking free space")
     try:
         src_size = get_used_space(source)
     except OSError:
-        log("ERR: I/O error, card likely corrupted. Please copy manually!")
+        log("ERR: I/O error, card likely corrupted. Please copy manually!", "error")
         blink_error(6, 3)
         return "idle", None, None
     dest_free = get_free_space(dest)
-    log(f"\tsrc size: {src_size} Gb")
-    log(f"\tdest free: {dest_free} Gb")
+    log(f"DEB:\tsrc size: {src_size} Gb", "debug")
+    log(f"DEB:\tdest free: {dest_free} Gb", "debug")
     if src_size > dest_free:
-        log("ERR: not enough space on dest for source")
+        log("ERR: not enough space on dest for source", "error")
         blink_error(5, 2)  # raise NotEnoughSpaceError
         return "idle", source, dest
 
@@ -257,7 +284,7 @@ def monitor_progress(source, dest, progress_q, rsync_thread):
 
 def start_copy_thread(source, dest):
 
-    log("copying")
+    log("INF: starting copy")
     sleep(0.5)
     time_str = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     dest_save_dir = dest + "/" + os.path.basename(source) + "_" + time_str
@@ -272,7 +299,7 @@ def start_copy_thread(source, dest):
         f"--exclude .Trashes --exclude '.fsevents*' --exclude 'System*' --exclude '.Spotlight*' " +
         f"--exclude '*.wav' --exclude '*.WAV' {source} {dest_save_dir}"
         )
-    log(cmd)
+    log(f"DEB: {cmd}", "debug")
     subprocess.run(shlex.split(cmd))
     
     # second, copy .wav and .WAV files above min_file_size
@@ -281,7 +308,7 @@ def start_copy_thread(source, dest):
         f"--exclude .Trashes --exclude '.fsevents*' --exclude 'System*' --exclude '.Spotlight*' " +
         f"{source} {dest_save_dir}"
         )
-    log(cmd)
+    log(f"DEB: {cmd}", "debug")
     rsync_process = subprocess.Popen(
         shlex.split(cmd), stdout=subprocess.PIPE, stderr=subprocess.STDOUT
     )
@@ -300,7 +327,7 @@ def start_copy_thread(source, dest):
 
 
 def check_dest_synced(source, dest, dest_save_dir):
-    log("checking if dest has all files from source")
+    log("INF: checking if dest has all files from source")
     start_time = time()
 
     n_files_out_of_sync = 0
@@ -311,7 +338,7 @@ def check_dest_synced(source, dest, dest_save_dir):
         f"--exclude .Trashes --exclude '.fsevents*' --exclude 'System*' --exclude '.Spotlight*' " +
         f"--exclude '*.wav' --exclude '*.WAV' {source} {dest_save_dir}"
         )
-    log(cmd)
+    log(f"DEB: {cmd}", "debug")
     check_process = subprocess.Popen(
         shlex.split(cmd), stdout=subprocess.PIPE, stderr=subprocess.STDOUT
     )
@@ -320,7 +347,8 @@ def check_dest_synced(source, dest, dest_save_dir):
         for f in output_parser(check_process)
         if "Number of regular files transferred" in f
     ]
-    log(return_values)
+    log(f"DEB: {return_values}", "debug")
+    
     n_files_out_of_sync += int(return_values[0].split(" ")[-1])
 
     # check sync of all wav/WAV files over size limit:
@@ -330,7 +358,7 @@ def check_dest_synced(source, dest, dest_save_dir):
         f"--exclude .Trashes --exclude '.fsevents*' --exclude 'System*' --exclude '.Spotlight*' " +
         f"{source} {dest_save_dir}"
         )
-    log(cmd)
+    log(f"DEB: {cmd}", "debug")
     check_process = subprocess.Popen(
         shlex.split(cmd), stdout=subprocess.PIPE, stderr=subprocess.STDOUT
     )
@@ -340,15 +368,15 @@ def check_dest_synced(source, dest, dest_save_dir):
         for f in output_parser(check_process)
         if "Number of regular files transferred" in f
     ]
-    log(return_values)
+    log(f"DEB: {return_values}", "debug")
 
     n_files_out_of_sync += int(return_values[0].split(" ")[-1])
-    log(n_files_out_of_sync)
+    log(f"DEB: {n_files_out_of_sync}", "debug")
     return n_files_out_of_sync == 0
 
 
 def cancel_button_held():
-    log("cancel button held")
+    log("INF: cancel button held")
     sleep(1)  # so that we don't repeat quickly
     if not status in ("copying", "incomplete_copy", "complete_copy"):
         # whatever status we were in, return to idle status
@@ -365,9 +393,9 @@ def cancel_button_held():
     rsync_process.terminate()
     try:
         rsync_process.wait(timeout=5)
-        log(f"== subprocess rsync_process exited with rx={rsync_process.returncode}")
+        log(f"INF: == subprocess rsync_process exited with rx={rsync_process.returncode}")
     except subprocess.TimeoutExpired:
-        log("subprocess rsync_process did not terminate in time")
+        log("ERR: subprocess rsync_process did not terminate in time", "error")
 
     # because the transfer was cancelled, we go to "incomplete_transfer"
     return "incomplete_transfer"
@@ -375,7 +403,6 @@ def cancel_button_held():
 
 # the main loop only catches user input and sends work to threads
 status = "idle"
-log("status: " + status)
 
 # TODO: leds for mounted source and dest drives (update every few seconds)
 last_mount_check = -1
@@ -389,16 +416,16 @@ while True:
         status = cancel_button_held()
         sleep(3)
     elif go_button.is_pressed and status == "idle":
-        log("go button pressed")
+        log("INF: go button pressed")
         status, source, dest = prepare_copy()
         sleep(1)
     elif go_button.is_pressed and status == "complete_transfer":
-        log("user aknowledged finished transfer")
+        log("INF: user aknowledged finished transfer")
         status = "idle"
         sleep(1)
     elif go_button.is_held and status == "incomplete_transfer":
         # requires user to HOLD go button to aknowledge an incomplete transfer
-        log("user akcnowledged incomplete transfer")
+        log("INF: user akcnowledged incomplete transfer")
         status = "idle"
         sleep(3)
     elif go_button.is_pressed and status == "ready_to_copy":
@@ -418,19 +445,19 @@ while True:
         eject_button.wait_for_release(1)
         if eject_button.is_held:
             # eject the destination drive
-            log("ejecting destination")
+            log("INF: ejecting destination")
             eject_drive(source=False)
             sleep(3)
         else:  # short press, no longer held
             # eject the source drive
-            log("ejecting source")
+            log("INF: ejecting source")
             eject_drive(source=True)
             sleep(1)
 
     # handle end-of-copy: check integrity of copy
     if status == "copying" and not rsync_thread.is_alive():
         # we are done copying, or it failed
-        log("rsync thread finished")
+        log("INF: rsync thread finished")
         status = "check_transfer"
 
         status_led.blink(0.25, 0.25)
@@ -440,10 +467,10 @@ while True:
         # report finished or incomplete transfer
         complete_transfer = check_dest_synced(source, dest, dest_save_dir)
         if complete_transfer:
-            log("transfer was complete. Press Go to acknowledge.")
+            log("INF: transfer was complete. Press Go to acknowledge.")
             status = "complete_transfer"
         else:
-            log("ERR: transfer was not complete. Hold Go to acknowledge.")
+            log("ERR: transfer was not complete. Hold Go to acknowledge.", "error")
             status = "incomplete_transfer"
         status_led.off
         progress_led.off
@@ -457,18 +484,17 @@ while True:
     # check if status changed during this iteration
     status_changed = status != prev_status
     if status_changed:
-        log(f"status: {status}")
-
-    # update LEDs and depending on status:
-    if status_changed:
+        log(f"INF: status changed: {prev_status} to {status}")
         update_leds(status)
+
+
 
     # read output of copying thread to the log
     if status == "copying":
         # read lines from rsync output
         try:
             line = rsync_outq.get(block=False)
-            log(line)
+            log(line, "debug")
         except queue.Empty:
             pass  # no lines in queue
 
