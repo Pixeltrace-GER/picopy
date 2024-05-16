@@ -44,9 +44,7 @@ logger.addHandler(file_logger)
 mount_check_interval = 1  # every x seconds, check if a source and destination are mounted
 mount_location = "/media"  # location of mounted USB devices
 ui_sleep_time = 0.05  # seconds to sleep between checking for user input
-min_file_size = "100k"  # minimum .wav/.WAV file size to include: 100kb ~=1sec .WAV audio
-# note: all files other than .wav and .WAV are copied regardless of size, but
-# except the excluded file types: '.Trashes'  '.fsevents*' 'System*' '.Spotlight*'
+
 
 # initialize global variables
 rsync_process = None
@@ -292,20 +290,23 @@ def start_copy_thread(source, dest):
     # first create the directory
     Path(dest_save_dir).mkdir(exist_ok=True, parents=True)
 
-    # we will run two rsync commands, copying all non-wav files then including wav files over min_file_size
-    # first copy everything except .wav, .WAV, and architve files we don't want
+    # we will run two rsync commands, copying all non video / image files then including all video an image files
+    # first copy everything except .mp4, .insv, .insp
     cmd = (
         f"rsync -rv --log-file=./rsync.log --progress " +
-        f"--exclude .Trashes --exclude '.fsevents*' --exclude 'System*' --exclude '.Spotlight*' " +
-        f"--exclude '*.wav' --exclude '*.WAV' {source} {dest_save_dir}"
+        f"--exclude 'System*' " +
+        f"--exclude '*.mp4' --exclude '*.MP4' " +
+        f"--exclude '*.insv' --exclude '*.INSV' " +
+        f"--exclude '*.insp' --exclude '*.INSP' " +
+        f"{source} {dest_save_dir}"
         )
     log(f"DEB: {cmd}", "debug")
     subprocess.run(shlex.split(cmd))
     
-    # second, copy .wav and .WAV files above min_file_size
+    # second, copy all Insta360 files (.mp4, .insv, .insp)
     cmd = (
-        f"rsync -rv --log-file=./rsync.log --min-size={min_file_size} --progress --ignore-existing " +
-        f"--exclude .Trashes --exclude '.fsevents*' --exclude 'System*' --exclude '.Spotlight*' " +
+        f"rsync -rv --log-file=./rsync.log --progress --ignore-existing " +
+        f"--exclude 'System*' " +
         f"{source} {dest_save_dir}"
         )
     log(f"DEB: {cmd}", "debug")
@@ -332,11 +333,14 @@ def check_dest_synced(source, dest, dest_save_dir):
 
     n_files_out_of_sync = 0
 
-    # check sync of non wav/WAV files: (dry run with -n flag and --stats)
+    # check sync of non Insta360 files: (dry run with -n flag and --stats)
     cmd = (
         f"rsync -rvn --stats  --progress --size-only " +
-        f"--exclude .Trashes --exclude '.fsevents*' --exclude 'System*' --exclude '.Spotlight*' " +
-        f"--exclude '*.wav' --exclude '*.WAV' {source} {dest_save_dir}"
+        f"--exclude 'System*' " +
+        f"--exclude '*.mp4' --exclude '*.MP4' " +
+        f"--exclude '*.insv' --exclude '*.INSV' " +
+        f"--exclude '*.insp' --exclude '*.INSP' " +
+        f"{source} {dest_save_dir}"
         )
     log(f"DEB: {cmd}", "debug")
     check_process = subprocess.Popen(
@@ -351,11 +355,11 @@ def check_dest_synced(source, dest, dest_save_dir):
     
     n_files_out_of_sync += int(return_values[0].split(" ")[-1])
 
-    # check sync of all wav/WAV files over size limit:
+    # check sync of all Inst360 files:
     # rsync command (dry run) to see if any files would be transferred based on size difference
     cmd = (
-        f"rsync -rvn --stats --min-size={min_file_size} --progress --ignore-existing " +
-        f"--exclude .Trashes --exclude '.fsevents*' --exclude 'System*' --exclude '.Spotlight*' " +
+        f"rsync -rvn --stats --progress --ignore-existing " +
+        f"--exclude 'System*' " +
         f"{source} {dest_save_dir}"
         )
     log(f"DEB: {cmd}", "debug")
@@ -430,13 +434,13 @@ while True:
         sleep(3)
     elif go_button.is_pressed and status == "ready_to_copy":
         # start copy thread
+        print("debug!", status)
         status, rsync_process, rsync_outq, rsync_thread, dest_save_dir = start_copy_thread(
             source, dest
         )
         progress_monitor_thread, progress_q = start_progress_monitor_thread(
             source, dest, rsync_thread
         )
-        status = "copying"
         sleep(1)
     elif eject_button.is_pressed:
         if status == "ready_to_copy":
