@@ -104,6 +104,32 @@ def blink_error(n, reps=2):
         sleep(0.4)
 
 
+def blink_error_src(n, reps=2):
+    """blink the src led to send a message"""
+    error_led.on()
+    for r in range(reps):
+        for i in range(n):
+            src_mounted_led.on()
+            sleep(0.2)
+            src_mounted_led.off()
+            sleep(0.2)
+        sleep(0.4)
+    error_led.off()
+
+
+def blink_error_dest(n, reps=2):
+    """blink the error led to send a message"""
+    error_led.on()
+    for r in range(reps):
+        for i in range(n):
+            dest_mounted_led.on()
+            sleep(0.2)
+            dest_mounted_led.off()
+            sleep(0.2)
+        sleep(0.4)
+    error_led.off()
+
+
 def blink_progress_led(outof10):
     """blink the progress led up to 10 times to indicate progress out of 10"""
     if outof10 > 10 or outof10 < 0:
@@ -123,7 +149,7 @@ def get_src_drive():  # TODO: blink the drive LED rather than error
             src_drives.append(d)
     if len(src_drives) > 1:
         log("ERR: found multiple source drives")
-        blink_error(3, 2)
+        blink_error_src(3, 2)
         return None
     elif len(src_drives) < 1:
         return None
@@ -136,12 +162,12 @@ def get_dest_drive():
     drives = glob(f"{mount_location}/*")
     dest_drives = []
     for d in drives:
-        # log(f'checking for {d}/PICOPY_DESTINATION')
+        log(f'checking for {d}/PICOPY_DESTINATION')
         if os.path.exists(f"{d}/PICOPY_DESTINATION"):
             dest_drives.append(d)
     if len(dest_drives) > 1:
         log("ERR: found multiple destination drives")
-        blink_error(4, 2)
+        blink_error_dest(4, 2)
         return None
     elif len(dest_drives) < 1:
         return None
