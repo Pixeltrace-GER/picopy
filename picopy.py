@@ -20,9 +20,9 @@ error_led = LED(22)
 src_mounted_led = LED(24)
 dest_mounted_led = LED(23)
 
-go_button = Button(2, hold_time=1, hold_repeat=False)
-cancel_button = Button(4, hold_time=1, hold_repeat=False)
-eject_button = Button(18, hold_time=1, hold_repeat=False)
+go_button = Button(2, hold_time=1)
+cancel_button = Button(4, hold_time=1)
+eject_button = Button(18, hold_time=1)
 # power button is GPIO3, but managed by a separate script
 
 # script parameters
@@ -30,7 +30,7 @@ mount_check_interval = 1  # every x seconds, check if a source and destination a
 mount_location = "/media"  # location of mounted USB devices
 ui_sleep_time = 0.05  # seconds to sleep between checking for user input
 min_file_size = "100k"  # minimum .wav/.WAV file size to include: 100kb ~=1sec .WAV audio
-# note: all files other than .wav and .WAV are copied regardless of size, but 
+# note: all files other than .wav and .WAV are copied regardless of size, but
 # except the excluded file types: '.Trashes'  '.fsevents*' 'System*' '.Spotlight*'
 
 # initialize global variables
@@ -383,6 +383,7 @@ while True:
         progress_monitor_thread, progress_q = start_progress_monitor_thread(
             source, dest, rsync_thread
         )
+        status = "copying"
         sleep(1)
     elif eject_button.is_pressed:
         if status == "ready_to_copy":

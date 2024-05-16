@@ -9,9 +9,9 @@ src_mounted_led = LED(24)
 dest_mounted_led = LED(23)
 
 go_button = Button(2, hold_time=1, hold_repeat=False)
-cancel_button = Button(3, hold_time=1, hold_repeat=False)
-eject_button = Button(4, hold_time=1, hold_repeat=False)
-power_button = Button(18, hold_time=1, hold_repeat=False)
+cancel_button = Button(4, hold_time=1, hold_repeat=False)
+eject_button = Button(18, hold_time=1, hold_repeat=False)
+power_button = Button(3, hold_time=1, hold_repeat=False)
 btns = [go_button, cancel_button, eject_button, power_button]
 btn_names = ["go button", "cancel button", "eject button", "power button"]
 
