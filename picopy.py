@@ -2,7 +2,7 @@ from math import floor
 import datetime
 
 print(f"started picopy at {datetime.datetime.now()}")
-from gpiozero import LED, Button
+from gpiozero import Button
 from time import sleep, time
 import os
 from glob import glob
@@ -13,14 +13,9 @@ import threading
 from pathlib import Path
 import queue
 import logging
+from led_client import led_cmd
 
-# GPIO pin setup for LEDs and Buttons
-status_led = LED(17)
-progress_led = LED(27)
-error_led = LED(22)
-src_mounted_led = LED(24)
-dest_mounted_led = LED(23)
-
+# GPIO pin setup for Buttons
 go_button = Button(2, hold_time=1)
 cancel_button = Button(4, hold_time=1)
 eject_button = Button(18, hold_time=1)
@@ -41,7 +36,7 @@ file_logger.setLevel(logging.INFO)
 logger.addHandler(file_logger)
 
 # script parameters
-mount_check_interval = 1  # every x seconds, check if a source and destination are mounted
+mount_check_interval = 3  # every x seconds, check if a source and destination are mounted
 mount_location = "/media"  # location of mounted USB devices
 ui_sleep_time = 0.05  # seconds to sleep between checking for user input
 
@@ -86,27 +81,27 @@ def update_leds(status):
     """update status, progress, and error leds to reflect the current status"""
     # status LED
     if status == "copying":
-        status_led.blink(0.25, 0.25, n=None, background=True)
+        led_cmd("status_led/blink/0.25/0.25")
     elif status == "idle":
-        status_led.blink(0.1, 2.9, n=None, background=True)
+        led_cmd("status_led/blink/0.1/2.9")
     elif status == "ready_to_copy":
-        status_led.blink(1, 1, n=None, background=True)
+        led_cmd("status_led/blink/1/1")
     elif status == "complete_transfer":
-        status_led.on()
+        led_cmd("status_led/on")
     else:
-        status_led.off()
+        led_cmd("status_led/off")
 
     # error LED
     if status == "incomplete_transfer":
-        error_led.on()
+        led_cmd("error_led/on")
     else:
-        error_led.off()
+        led_cmd("error_led/off")
 
     # progress LED
     if status == "complete_transfer":
-        progress_led.on()
+        led_cmd("progress_led/on")
     elif status != "copying":
-        progress_led.off()
+        led_cmd("progress_led/off")
 
 
 def get_free_space(disk, scale=2 ** 30):
@@ -120,49 +115,37 @@ def get_used_space(disk, scale=2 ** 30):
 def blink_error(n, reps=2):
     """blink the error led to send a message"""
     for r in range(reps):
-        for i in range(n):
-            error_led.on()
-            sleep(0.2)
-            error_led.off()
-            sleep(0.2)
+        led_cmd("error_led/blink/0.2/0.2/{n}/False")
         sleep(0.4)
 
 
 def blink_error_src(n, reps=2):
     """blink the src led to send a message"""
-    error_led.on()
+    led_cmd("error_led/on")
     for r in range(reps):
-        for i in range(n):
-            src_mounted_led.on()
-            sleep(0.2)
-            src_mounted_led.off()
-            sleep(0.2)
+        led_cmd(f"src_mounted_led/blink/0.2/0.2/{n}/False")
         sleep(0.4)
-    error_led.off()
+    led_cmd("error_led/off")
 
 
 def blink_error_dest(n, reps=2):
     """blink the error led to send a message"""
-    error_led.on()
+    led_cmd("error_led/on")
     for r in range(reps):
-        for i in range(n):
-            dest_mounted_led.on()
-            sleep(0.2)
-            dest_mounted_led.off()
-            sleep(0.2)
+        led_cmd(f"dest_mounted_led/blink/0.2/0.2/{n}/False")
         sleep(0.4)
-    error_led.off()
+    led_cmd("error_led/off")
 
 
 def blink_progress_led(outof10):
     """blink the progress led up to 10 times to indicate progress out of 10"""
     if outof10 > 10 or outof10 < 0:
         raise ValueError(f"outof10 must be int in 0-10. got {outof10}")
-    progress_led.blink(0.2, 0.25, outof10)
+    led_cmd(f"progress_led/blink/0.2/0.25/{outof10}")
     sleep(5 - 0.45 * outof10)
 
 
-def get_src_drive():  # TODO: blink the drive LED rather than error
+def get_src_drive():
     """search for source and destination drives mounted at mount_location
     a source drive does is any drive listed in /media/pi/ that does not have a file/folder named PICOPY_DESTINATION in root directory
     must find exactly one. if zero returns None, if >1 blinks error"""
@@ -408,106 +391,133 @@ def cancel_button_held():
 # the main loop only catches user input and sends work to threads
 status = "idle"
 
-# TODO: leds for mounted source and dest drives (update every few seconds)
 last_mount_check = -1
+src_led_status = False
+dest_led_status = False
 prev_status = None
-while True:
 
-    sleep(ui_sleep_time)
 
-    # handle user input
-    if cancel_button.is_held:
-        status = cancel_button_held()
-        sleep(3)
-    elif go_button.is_pressed and status == "idle":
-        log("INF: go button pressed")
-        status, source, dest = prepare_copy()
-        sleep(1)
-    elif go_button.is_pressed and status == "complete_transfer":
-        log("INF: user aknowledged finished transfer")
-        status = "idle"
-        sleep(1)
-    elif go_button.is_held and status == "incomplete_transfer":
-        # requires user to HOLD go button to aknowledge an incomplete transfer
-        log("INF: user akcnowledged incomplete transfer")
-        status = "idle"
-        sleep(3)
-    elif go_button.is_pressed and status == "ready_to_copy":
-        # start copy thread
-        print("debug!", status)
-        status, rsync_process, rsync_outq, rsync_thread, dest_save_dir = start_copy_thread(
-            source, dest
-        )
-        progress_monitor_thread, progress_q = start_progress_monitor_thread(
-            source, dest, rsync_thread
-        )
-        sleep(1)
-    elif eject_button.is_pressed:
-        if status == "ready_to_copy":
-            status = "idle"
-        # wait to see if this is a simple press or hold:
-        eject_button.wait_for_release(1)
-        if eject_button.is_held:
-            # eject the destination drive
-            log("INF: ejecting destination")
-            eject_drive(source=False)
+try:
+
+    while True:
+        sleep(ui_sleep_time)
+
+        # handle user input
+        if cancel_button.is_held:
+            status = cancel_button_held()
             sleep(3)
-        else:  # short press, no longer held
-            # eject the source drive
-            log("INF: ejecting source")
-            eject_drive(source=True)
+        elif go_button.is_pressed and status == "idle":
+            log("INF: go button pressed")
+            status, source, dest = prepare_copy()
             sleep(1)
+        elif go_button.is_pressed and status == "complete_transfer":
+            log("INF: user aknowledged finished transfer")
+            status = "idle"
+            sleep(1)
+        elif go_button.is_held and status == "incomplete_transfer":
+            # requires user to HOLD go button to aknowledge an incomplete transfer
+            log("INF: user akcnowledged incomplete transfer")
+            status = "idle"
+            sleep(3)
+        elif go_button.is_pressed and status == "ready_to_copy":
+            # start copy thread
+            print("debug!", status)
+            status, rsync_process, rsync_outq, rsync_thread, dest_save_dir = start_copy_thread(
+                source, dest
+            )
+            progress_monitor_thread, progress_q = start_progress_monitor_thread(
+                source, dest, rsync_thread
+            )
+            sleep(1)
+        elif eject_button.is_pressed:
+            if status == "ready_to_copy":
+                status = "idle"
+            # wait to see if this is a simple press or hold:
+            eject_button.wait_for_release(1)
+            if eject_button.is_held:
+                # eject the destination drive
+                log("INF: ejecting destination")
+                eject_drive(source=False)
+                sleep(3)
+            else:  # short press, no longer held
+                # eject the source drive
+                log("INF: ejecting source")
+                eject_drive(source=True)
+                sleep(1)
 
-    # handle end-of-copy: check integrity of copy
-    if status == "copying" and not rsync_thread.is_alive():
-        # we are done copying, or it failed
-        log("INF: rsync thread finished")
-        status = "check_transfer"
-
-        status_led.blink(0.25, 0.25)
-        sleep(0.25)
-        progress_led.blink(0.25, 0.25)
-
-        # report finished or incomplete transfer
-        complete_transfer = check_dest_synced(source, dest, dest_save_dir)
-        if complete_transfer:
-            log("INF: transfer was complete. Press Go to acknowledge.")
-            status = "complete_transfer"
-        else:
-            log("ERR: transfer was not complete. Hold Go to acknowledge.", "error")
-            status = "incomplete_transfer"
-        status_led.off
-        progress_led.off
-
-    # check if source and dest drives are mounted
-    if time() - last_mount_check > mount_check_interval:
-        last_mount_check = time()
-        src_mounted_led.off() if get_src_drive() is None else src_mounted_led.on()
-        dest_mounted_led.off() if get_dest_drive() is None else dest_mounted_led.on()
-
-    # check if status changed during this iteration
-    status_changed = status != prev_status
-    if status_changed:
-        log(f"INF: status changed: {prev_status} to {status}")
-        update_leds(status)
+        # handle end-of-copy: check integrity of copy
+        if status == "copying" and not rsync_thread.is_alive():
+            # we are done copying, or it failed
+            log("INF: rsync thread finished")
+            status = "check_transfer"
 
 
+            led_cmd("status_led/blink/0.25/0.25")
+            sleep(0.25)
+            led_cmd("progress_led/blink/0.25/0.25")
 
-    # read output of copying thread to the log
-    if status == "copying":
-        # read lines from rsync output
-        try:
-            line = rsync_outq.get(block=False)
-            log(line, "debug")
-        except queue.Empty:
-            pass  # no lines in queue
+            # report finished or incomplete transfer
+            complete_transfer = check_dest_synced(source, dest, dest_save_dir)
+            if complete_transfer:
+                log("INF: transfer was complete. Press Go to acknowledge.")
+                status = "complete_transfer"
+            else:
+                log("ERR: transfer was not complete. Hold Go to acknowledge.", "error")
+                status = "incomplete_transfer"
+            led_cmd("status_led/off")
+            led_cmd("progress_led/off")
 
-        # update status LED using messages from progress_q
-        try:
-            progress_float = progress_q.get(block=False)
-            progress_outof10 = floor(progress_float * 10)
-            blink_progress_led(progress_outof10)
-        except queue.Empty:
-            pass
+        # check if source and dest drives are mounted
+        if time() - last_mount_check > mount_check_interval:
+            last_mount_check = time()
+                        
+            if get_src_drive() is None:
+                if src_led_status != False:
+                    src_led_status = False
+                    led_cmd("src_mounted_led/off")
+            else:
+                if src_led_status != True:
+                    src_led_status = True
+                    led_cmd("src_mounted_led/on")
+            
+            if get_dest_drive() is None:
+                if dest_led_status != False:
+                    dest_led_status = False
+                    led_cmd("dest_mounted_led/off")  
+            else:
+                if dest_led_status != True:
+                    dest_led_status = True
+                    led_cmd("dest_mounted_led/on")
 
-    prev_status = status
+
+        # check if status changed during this iteration
+        status_changed = status != prev_status
+        if status_changed:
+            log(f"INF: status changed: {prev_status} to {status}")
+            update_leds(status)
+
+
+
+        # read output of copying thread to the log
+        if status == "copying":
+            # read lines from rsync output
+            try:
+                line = rsync_outq.get(block=False)
+                log(line, "debug")
+            except queue.Empty:
+                pass  # no lines in queue
+
+            # update status LED using messages from progress_q
+            try:
+                progress_float = progress_q.get(block=False)
+                progress_outof10 = floor(progress_float * 10)
+                blink_progress_led(progress_outof10)
+            except queue.Empty:
+                pass
+
+        prev_status = status
+
+except KeyboardInterrupt:
+    led_cmd("error_led/blink")
+finally:
+    pass
