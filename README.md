@@ -105,7 +105,8 @@ Hold the Go button to acknowledge the incomplete transfer and return to â€œidleâ
 
 
 ### PCB Layout
-![PCB Layout](img/PCB_Layout.jpeg)
+![PCB Layout](img/PCB_Layout.png)
+![PCB](img/PCB.png)
 
 
 ### SSH into pi with Ethernet cable
