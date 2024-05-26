@@ -193,13 +193,30 @@ def eject_drive(source=True):
         log("ERR: no drive to eject", "error")
     else:
         # try to eject the disk with system eject command
-        cmd = f"eject {drive}"
+        cmd = f"umount {drive}"
         log(cmd,"debug")
         response = subprocess.Popen(
             shlex.split(cmd), stdout=subprocess.PIPE, stderr=subprocess.STDOUT
         )
-        # response.communicate()
-        [log(r,"debug") for r in output_parser(response)]
+        [log(r, "debug") for r in output_parser(response)]
+
+    #remove mountpoint if empty
+        response.wait()
+        if response.returncode == 0:
+            log(f"Unmounted {drive} successfully.")
+            
+            # Remove the mount point directory if it's empty
+            try:
+                if not os.listdir(drive):
+                    os.rmdir(drive)
+                    log(f"Removed empty mount point directory {drive}.")
+                else:
+                    log(f"Mount point directory {drive} is not empty, not removed.")
+            except OSError as e:
+                log(f"Failed to remove mount point directory {drive}: {e}", "error")
+        else:
+            log(f"Failed to unmount {drive}", "error")
+
 
     sleep(1)
 
