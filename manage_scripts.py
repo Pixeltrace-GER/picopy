@@ -6,7 +6,7 @@ import os
 scripts = [
     "/home/pi/picopy/led_server.py",
     "/home/pi/picopy/picopy.py",
-    "/home/pi/picopy/listen-for-shutdown.py"
+    "/home/pi/picopy/shutdown.py"
 ]
 
 def is_running(script):

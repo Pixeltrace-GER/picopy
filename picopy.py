@@ -115,7 +115,7 @@ def get_used_space(disk, scale=2 ** 30):
 def blink_error(n, reps=2):
     """blink the error led to send a message"""
     for r in range(reps):
-        led_cmd("error_led/blink/0.2/0.2/{n}/False")
+        led_cmd(f"error_led/blink/0.2/0.2/{n}/False")
         sleep(0.4)
 
 
